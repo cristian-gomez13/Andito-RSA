@@ -6,7 +6,7 @@
   "trailingSlash": false,
   "headers": [
     {
-      "source": "/(favicon(.*)|apple-touch-icon.png|site(.*).webmanifest|android-chrome(.*)|og-image.png|Andito(.*).png)",
+      "source": "/:all*(ico|png|svg|webmanifest)",
       "headers": [
         {
           "key": "Cache-Control",

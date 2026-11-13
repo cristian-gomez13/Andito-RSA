@@ -76,3 +76,5 @@ rsa_*.csv
 metrics_*.csv
 test_results_*.csv
 benchmark_*.csv
+
+.vercel
