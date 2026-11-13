@@ -1,0 +1,47 @@
+<svg id="AnditoMascot" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <title>Andito - Mascota Oficial Red Salud Andina</title>
+  <defs>
+    <linearGradient id="tealGradient" x1="10" y1="20" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#179299"/>
+      <stop offset="100%" stop-color="#04a5e5"/>
+    </linearGradient>
+    <linearGradient id="furGradient" x1="30" y1="15" x2="70" y2="85" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7c6f64"/>
+      <stop offset="100%" stop-color="#504945"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Circular background ring (RSA Teal) -->
+  <circle cx="50" cy="56" r="38" fill="url(#tealGradient)"/>
+  <circle cx="50" cy="56" r="35" fill="#eff1f5"/>
+
+  <!-- Ears (Pop-Out above ring) -->
+  <ellipse cx="28" cy="24" rx="7" ry="8" fill="#504945"/>
+  <ellipse cx="28" cy="24" rx="4.5" ry="5.5" fill="#ea76cb" opacity="0.75"/>
+  
+  <ellipse cx="72" cy="24" rx="7" ry="8" fill="#504945"/>
+  <ellipse cx="72" cy="24" rx="4.5" ry="5.5" fill="#ea76cb" opacity="0.75"/>
+
+  <!-- Head & Cheeks -->
+  <ellipse cx="50" cy="38" rx="26" ry="22" fill="url(#furGradient)"/>
+  
+  <!-- Muzzle -->
+  <ellipse cx="50" cy="44" rx="14" ry="10" fill="#f5e0dc"/>
+  <ellipse cx="50" cy="39" rx="4.5" ry="3" fill="#2e3440"/>
+  
+  <!-- Eyes with sparkle -->
+  <ellipse cx="38" cy="33" rx="3.5" ry="4.5" fill="#2e3440"/>
+  <circle cx="36.5" cy="31.5" r="1.2" fill="#ffffff"/>
+  <ellipse cx="62" cy="33" rx="3.5" ry="4.5" fill="#2e3440"/>
+  <circle cx="60.5" cy="31.5" r="1.2" fill="#ffffff"/>
+
+  <!-- Whiskers -->
+  <path d="M34 44L20 42M34 46L20 48" stroke="#4c4f69" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M66 44L80 42M66 46L80 48" stroke="#4c4f69" stroke-width="1.2" stroke-linecap="round"/>
+
+  <!-- Torso & RSA Medical Badge -->
+  <path d="M30 56C30 56 36 68 50 68C64 68 70 56 70 56C70 74 62 88 50 88C38 88 30 74 30 56Z" fill="#7c6f64"/>
+  <rect x="46" y="66" width="8" height="18" rx="2" fill="#ffffff"/>
+  <rect x="41" y="71" width="18" height="8" rx="2" fill="#ffffff"/>
+  <path d="M48 75H52" stroke="#179299" stroke-width="2" stroke-linecap="round"/>
+</svg>

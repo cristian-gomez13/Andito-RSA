@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build outputs
+dist/
+out/
+build/
+*.tgz
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+!.env.example
+
+# Logs and diagnostic reports
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Test and coverage artifacts
+coverage/
+*.lcov
+.nyc_output/
+
+# Caches and runtime metadata
+.cache/
+.eslintcache
+*.tsbuildinfo
+.bun/
+
+# Editor and IDE configurations
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Operating System temporary and metadata files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary and local export artifacts
+*.tmp
+*.temp
+*.bak
+*.swp
+*.csv
+*.jsonl
+logs.txt
+logs-mensajes.csv
+unresolved_questions_rsa.json
+preguntas_no_resueltas_rsa.json
+
+# Generated business metrics and test benchmark CSVs for graphs
+rsa_*.csv
+metrics_*.csv
+test_results_*.csv
+benchmark_*.csv
