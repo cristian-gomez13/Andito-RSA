@@ -655,25 +655,101 @@ function executeLocalRuleBasedFallback(message: string): ChatResult {
 }
 
 /**
- * Servicio de conversación con Gemini con soporte de rotación de modelos y timeout adaptativo
+ * Servicio de conversación con Gemini con soporte dual de endpoints (Custom URL / Sub2API y Gemini Oficial),
+ * rotación de modelos y fallback resiliente al motor local.
  */
 export async function generateChatResponse(
   userMessage: string,
   history: ChatMessage[] = [],
 ): Promise<ChatResult> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
   const configuredModel = process.env.GEMINI_MODEL?.trim();
-  const baseUrl = process.env.GOOGLE_GEMINI_BASE_URL?.trim();
-  console.log("BASE_URL:", baseUrl);
 
-  // Si no hay API key o es placeholder, usar el motor de reglas local
+  interface EndpointConfig {
+    name: string;
+    apiKey: string;
+    baseUrl?: string;
+    apiVersion: string;
+  }
+
+  const endpoints: EndpointConfig[] = [];
+
+  // 1. Endpoint Personalizado (Custom URL / Sub2API / Proxy)
+  const customBaseUrl =
+    process.env.CUSTOM_GEMINI_BASE_URL?.trim() ||
+    (process.env.GOOGLE_GEMINI_BASE_URL &&
+    !process.env.GOOGLE_GEMINI_BASE_URL.includes("generativelanguage.googleapis.com")
+      ? process.env.GOOGLE_GEMINI_BASE_URL.trim()
+      : undefined);
+
+  const customApiKey =
+    process.env.CUSTOM_GEMINI_API_KEY?.trim() ||
+    (process.env.GEMINI_API_KEY?.startsWith("sk-")
+      ? process.env.GEMINI_API_KEY.trim()
+      : undefined);
+
+  if (customBaseUrl && customApiKey) {
+    endpoints.push({
+      name: "custom-endpoint",
+      apiKey: customApiKey,
+      baseUrl: customBaseUrl,
+      apiVersion:
+        process.env.CUSTOM_GENAI_API_VERSION?.trim() ||
+        process.env.GOOGLE_GENAI_API_VERSION?.trim() ||
+        "v1beta",
+    });
+  }
+
+  // 2. Endpoint Oficial de Google Gemini
+  const officialApiKey =
+    process.env.OFFICIAL_GEMINI_API_KEY?.trim() ||
+    process.env.GEMINI_API_KEY_OFFICIAL?.trim() ||
+    (process.env.GEMINI_API_KEY &&
+    !process.env.GEMINI_API_KEY.startsWith("sk-") &&
+    process.env.GEMINI_API_KEY !== "your_gemini_api_key_here" &&
+    process.env.GEMINI_API_KEY !== "your_key_here"
+      ? process.env.GEMINI_API_KEY.trim()
+      : undefined);
+
+  if (officialApiKey) {
+    const officialBaseUrl =
+      process.env.OFFICIAL_GEMINI_BASE_URL?.trim() ||
+      (process.env.GOOGLE_GEMINI_BASE_URL?.includes("generativelanguage.googleapis.com")
+        ? process.env.GOOGLE_GEMINI_BASE_URL.trim()
+        : undefined);
+
+    endpoints.push({
+      name: "gemini-oficial",
+      apiKey: officialApiKey,
+      baseUrl: officialBaseUrl,
+      apiVersion:
+        process.env.GOOGLE_GENAI_API_VERSION?.trim() ||
+        process.env.GOOGLE_GEMINI_API_VERSION?.trim() ||
+        "v1beta",
+    });
+  }
+
+  // 3. Fallback a GEMINI_API_KEY genérica si no entró en los casos anteriores
   if (
-    !apiKey ||
-    apiKey === "your_gemini_api_key_here" ||
-    apiKey === "your_key_here"
+    endpoints.length === 0 &&
+    process.env.GEMINI_API_KEY &&
+    process.env.GEMINI_API_KEY !== "your_gemini_api_key_here" &&
+    process.env.GEMINI_API_KEY !== "your_key_here"
   ) {
+    endpoints.push({
+      name: "gemini-default",
+      apiKey: process.env.GEMINI_API_KEY.trim(),
+      baseUrl: process.env.GOOGLE_GEMINI_BASE_URL?.trim(),
+      apiVersion:
+        process.env.GOOGLE_GENAI_API_VERSION?.trim() ||
+        process.env.GOOGLE_GEMINI_API_VERSION?.trim() ||
+        "v1beta",
+    });
+  }
+
+  // Si no hay endpoints válidos configurados, usar el motor de reglas local
+  if (endpoints.length === 0) {
     console.warn(
-      "[GeminiService] GEMINI_API_KEY no configurada o es placeholder. Usando modelo local de contingencia.",
+      "[GeminiService] Ninguna API KEY de Gemini configurada. Usando modelo local de contingencia.",
     );
     const result = localRuleBasedFallback(userMessage);
     result.modelUsed = "modelo-local-rsa";
@@ -685,17 +761,6 @@ export async function generateChatResponse(
     }
     return result;
   }
-
-  const apiVersion =
-    process.env.GOOGLE_GENAI_API_VERSION?.trim() ||
-    process.env.GOOGLE_GEMINI_API_VERSION?.trim() ||
-    "v1beta";
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    apiVersion,
-    ...(baseUrl ? { httpOptions: { baseUrl, apiVersion } } : {}),
-  });
 
   // Preparar historial compatible
   const contents: any[] = [];
@@ -721,157 +786,168 @@ export async function generateChatResponse(
     parts: [{ text: userMessage }],
   });
 
-  // Cadena de modelos candidatos para conmutación automática ante timeout o error de modelo
+  // Cadena de modelos candidatos
   const candidateModels = Array.from(
     new Set(
       [
         configuredModel,
+        "gemini-3.8-flash",
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
         "gemini-3.5-flash-lite",
-        "gemini-4-hydrogen",
-        "gemini-3.1-flash-lite",
       ].filter(Boolean) as string[],
     ),
   );
 
-  let lastError: any = null;
-  let didSwitchModel = false;
+  let didSwitch = false;
 
-  for (let i = 0; i < candidateModels.length; i++) {
-    const currentModel = candidateModels[i] || "gemini-3.8-flash-medium";
-    if (i > 0) {
-      didSwitchModel = true;
-      console.warn(
-        `[GeminiService] Conmutando a modelo alternativo: ${currentModel}`,
-      );
+  for (const endpoint of endpoints) {
+    console.log(`[GeminiService] Intentando endpoint: ${endpoint.name} (${endpoint.baseUrl || "Google AI Studio Default"})`);
+
+    let ai: GoogleGenAI;
+    try {
+      ai = new GoogleGenAI({
+        apiKey: endpoint.apiKey,
+        apiVersion: endpoint.apiVersion,
+        ...(endpoint.baseUrl ? { httpOptions: { baseUrl: endpoint.baseUrl, apiVersion: endpoint.apiVersion } } : {}),
+      });
+    } catch (clientErr: any) {
+      console.warn(`[GeminiService] Error instanciando cliente en ${endpoint.name}:`, clientErr?.message);
+      continue;
     }
 
-    try {
-      // Timeout por llamada individual adaptativo (3.5s para proxy/base_url local, 4.5s estándar)
-      const timeoutMs = Number(process.env.GEMINI_TIMEOUT_MS) || (baseUrl ? 3500 : 4500);
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("TIMEOUT_EXCEEDED")), timeoutMs),
-      );
+    for (let i = 0; i < candidateModels.length; i++) {
+      const currentModel = candidateModels[i] || "gemini-3.8-flash";
+      if (i > 0 || endpoint !== endpoints[0]) {
+        didSwitch = true;
+      }
 
-      const callPromise = ai.models.generateContent({
-        model: currentModel,
-        contents,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.1,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "object",
-            properties: {
-              reply: {
-                type: "string",
-                description:
-                  "Respuesta al usuario en español, sin tecnicismos, máximo 4 líneas, anticipando la siguiente necesidad.",
-              },
-              unresolved: {
-                type: "boolean",
-                description:
-                  "true si la duda no pudo resolverse con la base de conocimiento oficial o requirió derivar a asesor/humano.",
-              },
-              reason: {
-                type: "string",
-                description: "Motivo por el cual no se resolvió o se derivó.",
-              },
-              category: {
-                type: "string",
-                description: "Categoría de la pregunta.",
-              },
-            },
-            required: ["reply", "unresolved"],
-          },
-        },
-      });
-
-      const response = await Promise.race([callPromise, timeoutPromise]);
-
-      const candidatePart = (response as any).candidates?.[0]?.content?.parts?.find(
-        (p: any) => typeof p.text === "string" && p.text.trim().length > 0,
-      );
-      const textOutput = (response.text?.trim() || candidatePart?.text?.trim() || "");
-      let parsed: any;
       try {
-        parsed = JSON.parse(textOutput);
-      } catch {
-        const cleaned = textOutput
-          .replace(/^```json\s*/i, "")
-          .replace(/\s*```$/, "")
-          .trim();
-        parsed = JSON.parse(cleaned);
-      }
+        const timeoutMs =
+          Number(process.env.GEMINI_TIMEOUT_MS) ||
+          (endpoint.baseUrl ? 4000 : 5000);
 
-      let replyText =
-        parsed.reply ||
-        "Disculpa, no pude procesar tu mensaje. Por favor comunícate a nuestro Call Center (601) 555 0100.";
-
-      // Extracción o estimación de tokens utilizados en la interacción
-      const usage = (response as any)?.usageMetadata;
-      const promptTokens =
-        usage?.promptTokenCount ??
-        Math.max(
-          1,
-          Math.ceil((SYSTEM_INSTRUCTION.length + userMessage.length) / 4),
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("TIMEOUT_EXCEEDED")), timeoutMs),
         );
-      const completionTokens =
-        usage?.candidatesTokenCount ??
-        Math.max(1, Math.ceil(replyText.length / 4));
-      const totalTokens =
-        usage?.totalTokenCount ?? promptTokens + completionTokens;
 
-      // Si hubo conmutación de modelo por timeout o error previo, registrar únicamente en consola y logs.txt
-      if (didSwitchModel) {
+        const callPromise = ai.models.generateContent({
+          model: currentModel,
+          contents,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "object",
+              properties: {
+                reply: {
+                  type: "string",
+                  description:
+                    "Respuesta al usuario en español, sin tecnicismos, máximo 4 líneas, anticipando la siguiente necesidad.",
+                },
+                unresolved: {
+                  type: "boolean",
+                  description:
+                    "true si la duda no pudo resolverse con la base de conocimiento oficial o requirió derivar a asesor/humano.",
+                },
+                reason: {
+                  type: "string",
+                  description: "Motivo por el cual no se resolvió o se derivó.",
+                },
+                category: {
+                  type: "string",
+                  description: "Categoría de la pregunta.",
+                },
+              },
+              required: ["reply", "unresolved"],
+            },
+          },
+        });
+
+        const response = await Promise.race([callPromise, timeoutPromise]);
+
+        const candidatePart = (response as any).candidates?.[0]?.content?.parts?.find(
+          (p: any) => typeof p.text === "string" && p.text.trim().length > 0,
+        );
+        const textOutput =
+          response.text?.trim() || candidatePart?.text?.trim() || "";
+        let parsed: any;
+        try {
+          parsed = JSON.parse(textOutput);
+        } catch {
+          const cleaned = textOutput
+            .replace(/^```json\s*/i, "")
+            .replace(/\s*```$/, "")
+            .trim();
+          parsed = JSON.parse(cleaned);
+        }
+
+        let replyText =
+          parsed.reply ||
+          "Disculpa, no pude procesar tu mensaje. Por favor comunícate a nuestro Call Center (601) 555 0100.";
+
+        const usage = (response as any)?.usageMetadata;
+        const promptTokens =
+          usage?.promptTokenCount ??
+          Math.max(
+            1,
+            Math.ceil((SYSTEM_INSTRUCTION.length + userMessage.length) / 4),
+          );
+        const completionTokens =
+          usage?.candidatesTokenCount ??
+          Math.max(1, Math.ceil(replyText.length / 4));
+        const totalTokens =
+          usage?.totalTokenCount ?? promptTokens + completionTokens;
+
+        if (didSwitch) {
+          console.warn(
+            `[GeminiService] Conmutación exitosa a endpoint: ${endpoint.name}, modelo: ${currentModel}`,
+          );
+          logSystemEvent(
+            "Conmutación exitosa de proveedor/modelo",
+            `Endpoint: ${endpoint.name}, Modelo: ${currentModel}`,
+          );
+        }
+
+        const result: ChatResult = {
+          reply: replyText,
+          unresolved: Boolean(parsed.unresolved),
+          reason: parsed.reason,
+          category: parsed.category || "general",
+          modelUsed: `${endpoint.name}:${currentModel}`,
+          timeoutFallback: didSwitch,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+        };
+
+        const lines = result.reply.split("\n").filter((l) => l.trim().length > 0);
+        if (lines.length > 4) {
+          result.reply = lines.slice(0, 4).join("\n");
+        }
+
+        if (result.unresolved) {
+          logUnresolvedQuestion(userMessage, result.reason, result.category);
+        }
+
+        return result;
+      } catch (err: any) {
+        const isTimeout = err?.message === "TIMEOUT_EXCEEDED";
         console.warn(
-          `[GeminiService] Conmutación interna ejecutada a modelo: ${currentModel}`,
-        );
-        logSystemEvent(
-          "Conmutación de modelo Gemini",
-          `Activado modelo: ${currentModel}`,
+          `[GeminiService] ${endpoint.name} (${currentModel}) ${isTimeout ? "agotó tiempo de espera" : `falló: ${err?.message || err}`}. Reintentando con siguiente opción...`,
         );
       }
-
-      const result: ChatResult = {
-        reply: replyText,
-        unresolved: Boolean(parsed.unresolved),
-        reason: parsed.reason,
-        category: parsed.category || "general",
-        modelUsed: currentModel,
-        timeoutFallback: didSwitchModel,
-        promptTokens,
-        completionTokens,
-        totalTokens,
-      };
-
-      // Asegurar máximo 4 líneas
-      const lines = result.reply.split("\n").filter((l) => l.trim().length > 0);
-      if (lines.length > 4) {
-        result.reply = lines.slice(0, 4).join("\n");
-      }
-
-      // Si es no resuelta, registrar en unresolved_questions.json
-      if (result.unresolved) {
-        logUnresolvedQuestion(userMessage, result.reason, result.category);
-      }
-
-      return result;
-    } catch (err: any) {
-      lastError = err;
-      const isTimeout = err?.message === "TIMEOUT_EXCEEDED";
-      console.warn(
-        `[GeminiService] Modelo ${currentModel} ${isTimeout ? "agotó el tiempo de espera (timeout)" : `falló (${err?.message || err})`}. Probando siguiente opción en la cadena de respaldo...`,
-      );
     }
   }
 
-  // Si todos los modelos de la API fallaron o dieron timeout, recurrir al motor local (log a consola y logs.txt)
+  // Si todos los endpoints y modelos fallaron o dieron timeout, recurrir al motor local
   console.warn(
-    "[GeminiService] Todos los modelos de API fallaron o agotaron tiempo. Conmutando a contingencia local de Red Salud Andina.",
+    "[GeminiService] Todos los endpoints y modelos de API fallaron. Conmutando a contingencia local de Red Salud Andina.",
   );
   logSystemEvent(
     "Activación contingencia local",
-    "Todos los modelos de API agotaron tiempo o fallaron",
+    "Todos los endpoints y modelos fallaron",
   );
   const fallback = localRuleBasedFallback(userMessage);
   fallback.modelUsed = "modelo-local-contingencia";
@@ -879,10 +955,8 @@ export async function generateChatResponse(
   fallback.promptTokens = Math.max(1, Math.ceil(userMessage.length / 4));
   fallback.completionTokens = Math.max(1, Math.ceil(fallback.reply.length / 4));
   fallback.totalTokens = fallback.promptTokens + fallback.completionTokens;
-
   if (fallback.unresolved) {
     logUnresolvedQuestion(userMessage, fallback.reason, fallback.category);
   }
-
   return fallback;
 }
