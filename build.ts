@@ -59,3 +59,28 @@ for (const asset of staticAssets) {
     // Continuar si algún archivo auxiliar opcional no está presente
   }
 }
+
+// Copiar datasets, registros y logs del proyecto a la raíz de dist
+const dataAssets = [
+  "logs.txt",
+  "logs-mensajes.csv",
+  "unresolved_questions.json",
+  "rsa_live_testing_results.csv",
+  "rsa_test_benchmarks_and_performance.csv",
+  "rsa_business_case_kpis.csv",
+  "rsa_call_reasons_and_deflection.csv",
+  "rsa_complaints_reduction_impact.csv",
+  "rsa_hourly_demand_and_latency.csv",
+  "rsa_roi_financial_projection_12m.csv"
+];
+
+for (const asset of dataAssets) {
+  const srcPath = path.join(process.cwd(), asset);
+  const destPath = path.join(outdir, asset);
+  try {
+    await copyFile(srcPath, destPath);
+    console.log(` Copied data asset to dist: ${asset}`);
+  } catch {
+    // Continuar si algún archivo opcional no está presente
+  }
+}

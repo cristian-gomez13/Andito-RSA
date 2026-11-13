@@ -803,7 +803,7 @@ export async function generateChatResponse(
     parts: [{ text: userMessage }],
   });
 
-  // Cadena de modelos candidatos
+  // Cadena de modelos candidatos (gemini-2.5-flash primero por velocidad y estabilidad)
   const candidateModels = Array.from(
     new Set(
       [
@@ -840,9 +840,10 @@ export async function generateChatResponse(
       }
 
       try {
+        // Para endpoints personalizados locales o proxies, usar timeout ágil de 1200ms para no bloquear la experiencia si están caídos
         const timeoutMs =
           Number(process.env.GEMINI_TIMEOUT_MS) ||
-          (isVercel ? 2500 : (endpoint.baseUrl ? 4000 : 5000));
+          (endpoint.name === "custom-endpoint" ? 1200 : (isVercel ? 4500 : 7000));
 
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("TIMEOUT_EXCEEDED")), timeoutMs),

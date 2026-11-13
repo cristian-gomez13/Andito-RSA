@@ -298,27 +298,43 @@ export function App() {
     const controller = new AbortController();
     activeControllerRef.current = controller;
     const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const callStartTime = performance.now();
+
+    console.group(`💬 [Andito RSA | Cliente] Consulta: "${trimmed}"`);
+    console.log("⏱️ Hora inicio:", new Date().toLocaleTimeString());
+    console.log("🚀 Enviando solicitud POST a /api/chat...", {
+      message: trimmed,
+      historialPrevio: historyPayload.length,
+    });
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           message: trimmed,
-          history: historyPayload
+          history: historyPayload,
         }),
-        signal: controller.signal
+        signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
+      const callDurationMs = Math.round(performance.now() - callStartTime);
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data?.error || `Error del servidor (${res.status})`);
+        throw new Error(data?.error || `Error del servidor (${res.status} ${res.statusText || ""})`);
       }
+
+      console.log(`✅ [Andito RSA] Respuesta exitosa del servidor (${res.status} OK) en ${callDurationMs}ms:`, data);
+      if (data.modelUsed) {
+        console.log(`🤖 Modelo/Motor utilizado: ${data.modelUsed}`);
+      }
+      console.log(`📝 Respuesta de Andito:\n${data.reply}`);
+      console.groupEnd();
 
       const botMessage: ChatMessageItem = {
         id: `assistant-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -327,27 +343,34 @@ export function App() {
         timestamp: data.timestamp || new Date().toISOString(),
         unresolved: Boolean(data.unresolved),
         reason: data.reason,
-        category: data.category
+        category: data.category,
       };
 
       setMessages((prev) => [...prev, botMessage]);
     } catch (err: any) {
       clearTimeout(timeoutId);
+      const callDurationMs = Math.round(performance.now() - callStartTime);
 
       // Si fue abortado por un nuevo reintento manual inmediato, no registrar error
       if (err?.name === "AbortError" && activeControllerRef.current !== controller) {
+        console.log("ℹ️ [Andito RSA] Petición cancelada por nuevo mensaje del usuario.");
+        console.groupEnd();
         return;
       }
 
-      console.warn("Conmutando a contingencia cliente:", err?.name, err?.message);
-
       const isTimeout = err?.name === "AbortError";
-      const contingency = getClientContingencyReply(trimmed);
+      console.warn(`⚠️ [Andito RSA] Fallo en la llamada a /api/chat tras ${callDurationMs}ms:`, {
+        errorName: err?.name,
+        errorMessage: err?.message,
+        isTimeout,
+      });
 
-      const notice = isTimeout
-        ? "[Aviso: Tiempo de espera agotado con el servidor. Conmutando a modelo local de contingencia de Red Salud Andina]"
-        : "[Aviso: Servidor temporalmente no accesible (Failed to fetch). Conmutando a modelo local de contingencia de Red Salud Andina]";
-      console.warn(notice);
+      const contingency = getClientContingencyReply(trimmed);
+      console.info(
+        "🛡️ [Andito RSA] Activando motor autónomo de contingencia local de Red Salud Andina (resolución inmediata 100% en el cliente).",
+      );
+      console.log("📋 Respuesta de contingencia generada:\n" + contingency.reply);
+      console.groupEnd();
 
       const fallbackBotMessage: ChatMessageItem = {
         id: `assistant-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -355,7 +378,7 @@ export function App() {
         content: contingency.reply,
         timestamp: new Date().toISOString(),
         unresolved: contingency.unresolved,
-        category: "contingencia"
+        category: "contingencia",
       };
 
       setMessages((prev) => [...prev, fallbackBotMessage]);

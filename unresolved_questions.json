@@ -341,5 +341,12 @@
     "question": "dame el numero pi",
     "reason": "Consulta no encontrada en la base de conocimiento oficial",
     "category": "no_resuelto"
+  },
+  {
+    "id": "uq_1794555880892_qexi",
+    "timestamp": "2026-11-13T07:44:40.892Z",
+    "question": "quiero saber TODO sobre los centros y servicios de cada uno",
+    "reason": "Consulta no encontrada en la base de conocimiento oficial",
+    "category": "no_resuelto"
   }
 ]
