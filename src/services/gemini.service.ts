@@ -672,6 +672,17 @@ export async function generateChatResponse(
   }
 
   const endpoints: EndpointConfig[] = [];
+  const isVercel = Boolean(process.env.VERCEL);
+  const isPrivateIp = (url?: string) => {
+    if (!url) return false;
+    return (
+      url.includes("192.168.") ||
+      url.includes("10.") ||
+      url.includes("172.16.") ||
+      url.includes("localhost") ||
+      url.includes("127.0.0.1")
+    );
+  };
 
   // 1. Endpoint Personalizado (Custom URL / Sub2API / Proxy)
   const customBaseUrl =
@@ -688,15 +699,21 @@ export async function generateChatResponse(
       : undefined);
 
   if (customBaseUrl && customApiKey) {
-    endpoints.push({
-      name: "custom-endpoint",
-      apiKey: customApiKey,
-      baseUrl: customBaseUrl,
-      apiVersion:
-        process.env.CUSTOM_GENAI_API_VERSION?.trim() ||
-        process.env.GOOGLE_GENAI_API_VERSION?.trim() ||
-        "v1beta",
-    });
+    if (isVercel && isPrivateIp(customBaseUrl)) {
+      console.warn(
+        `[GeminiService] Custom URL ${customBaseUrl} es una IP privada LAN no accesible desde Vercel Cloud. Omitiendo custom-endpoint en la nube.`,
+      );
+    } else {
+      endpoints.push({
+        name: "custom-endpoint",
+        apiKey: customApiKey,
+        baseUrl: customBaseUrl,
+        apiVersion:
+          process.env.CUSTOM_GENAI_API_VERSION?.trim() ||
+          process.env.GOOGLE_GENAI_API_VERSION?.trim() ||
+          "v1beta",
+      });
+    }
   }
 
   // 2. Endpoint Oficial de Google Gemini
@@ -791,9 +808,9 @@ export async function generateChatResponse(
     new Set(
       [
         configuredModel,
-        "gemini-3.8-flash",
         "gemini-2.5-flash",
         "gemini-1.5-flash",
+        "gemini-3.8-flash",
         "gemini-3.5-flash-lite",
       ].filter(Boolean) as string[],
     ),
@@ -817,7 +834,7 @@ export async function generateChatResponse(
     }
 
     for (let i = 0; i < candidateModels.length; i++) {
-      const currentModel = candidateModels[i] || "gemini-3.8-flash";
+      const currentModel = candidateModels[i] || "gemini-2.5-flash";
       if (i > 0 || endpoint !== endpoints[0]) {
         didSwitch = true;
       }
@@ -825,7 +842,7 @@ export async function generateChatResponse(
       try {
         const timeoutMs =
           Number(process.env.GEMINI_TIMEOUT_MS) ||
-          (endpoint.baseUrl ? 4000 : 5000);
+          (isVercel ? 2500 : (endpoint.baseUrl ? 4000 : 5000));
 
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("TIMEOUT_EXCEEDED")), timeoutMs),
@@ -937,6 +954,19 @@ export async function generateChatResponse(
         console.warn(
           `[GeminiService] ${endpoint.name} (${currentModel}) ${isTimeout ? "agotó tiempo de espera" : `falló: ${err?.message || err}`}. Reintentando con siguiente opción...`,
         );
+        // Si el endpoint no responde por timeout o fallo de red, saltar al siguiente endpoint directamente
+        if (
+          isTimeout ||
+          err?.code === "ECONNREFUSED" ||
+          err?.code === "ENOTFOUND" ||
+          err?.message?.includes("fetch failed") ||
+          err?.message?.includes("ECONNRESET")
+        ) {
+          console.warn(
+            `[GeminiService] Endpoint ${endpoint.name} no accesible a nivel de red. Saltando modelos restantes de este endpoint.`,
+          );
+          break;
+        }
       }
     }
   }

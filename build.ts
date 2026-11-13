@@ -23,6 +23,16 @@ for (const output of result.outputs) {
   console.log(` ${path.relative(process.cwd(), output.path)}  ${(output.size / 1024).toFixed(1)} KB`);
 }
 
+// Compilar Serverless Function para Vercel
+await Bun.build({
+  entrypoints: ["src/server/chat.ts"],
+  outdir: "api",
+  naming: "chat.js",
+  target: "node",
+  minify: false,
+});
+console.log(" Bundled serverless function: api/chat.js");
+
 // Copiar archivos estáticos clave a la raíz de dist para despliegues perfectos en Vercel
 const staticAssets = [
   "favicon.ico",

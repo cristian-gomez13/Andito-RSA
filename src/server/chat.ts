@@ -1,7 +1,7 @@
-import { generateChatResponse, type ChatMessage } from "../src/services/gemini.service";
+import { generateChatResponse, type ChatMessage } from "../services/gemini.service";
 
 export const config = {
-  maxDuration: 15,
+  maxDuration: 10,
 };
 
 export default async function handler(req: any, res?: any) {
