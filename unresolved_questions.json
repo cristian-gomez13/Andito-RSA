@@ -348,5 +348,19 @@
     "question": "quiero saber TODO sobre los centros y servicios de cada uno",
     "reason": "Consulta no encontrada en la base de conocimiento oficial",
     "category": "no_resuelto"
+  },
+  {
+    "id": "uq_1794556682792_fiyh",
+    "timestamp": "2026-11-13T07:58:02.792Z",
+    "question": "Tengo fiebre y dolor de cabeza fuerte, ¿qué medicina me puedo tomar?",
+    "reason": "Solicitud de consejo médico o diagnóstico clínico",
+    "category": "consejo_medico"
+  },
+  {
+    "id": "uq_1794556690995_uue3",
+    "timestamp": "2026-11-13T07:58:10.995Z",
+    "question": "¿Cuánto cuesta una resonancia magnética con contraste para un paciente particular?",
+    "reason": "Consulta no encontrada en la base de conocimiento oficial",
+    "category": "no_resuelto"
   }
 ]

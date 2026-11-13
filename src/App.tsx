@@ -221,7 +221,7 @@ export function App() {
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
   const activeControllerRef = useRef<AbortController | null>(null);
 
-  // Cargar temas/primeros mensajes de sesiones previas
+  // Cargar temas/primeros mensajes de sesiones previas y verificar salud del backend
   useEffect(() => {
     try {
       const stored = localStorage.getItem(RECENT_QUERIES_KEY);
@@ -234,6 +234,25 @@ export function App() {
     } catch {
       // Ignorar errores de acceso
     }
+
+    // Diagnóstico en consola al iniciar
+    fetch("/api/health")
+      .then((res) => {
+        const ct = res.headers.get("content-type") || "";
+        return res.ok && !ct.includes("text/html") ? res.json() : null;
+      })
+      .then((health) => {
+        if (health) {
+          console.info("🩺 [Andito RSA] Conexión establecida con el backend:", health);
+        } else {
+          console.warn("⚠️ [Andito RSA] Endpoint /api/health no disponible o estático.");
+          console.info("💡 [Andito RSA] El motor local de contingencia del cliente está 100% activo y responderá si la nube no está disponible.");
+        }
+      })
+      .catch(() => {
+        console.warn("⚠️ [Andito RSA] Servidor backend no detectado en localhost/nube (Failed to fetch).");
+        console.info("💡 [Andito RSA] Modo autónomo cliente activo: todas las consultas se resuelven con las reglas oficiales locales de Red Salud Andina.");
+      });
   }, []);
 
   // Guardar únicamente el primer mensaje / tema de cada consulta/conversación
@@ -363,13 +382,20 @@ export function App() {
         errorName: err?.name,
         errorMessage: err?.message,
         isTimeout,
+        diagnostico: isTimeout
+          ? "El servidor excedió el tiempo máximo de espera (15s). Verifique si el servicio backend o la API remota de Gemini están respondiendo."
+          : "No fue posible conectar con el servidor backend (Failed to fetch). Probablemente el backend no está corriendo o hay bloqueo de CORS/red.",
+        solucion: "Conmutando automáticamente al motor de contingencia local de Red Salud Andina integrado en el cliente para garantizar servicio continuo.",
       });
 
       const contingency = getClientContingencyReply(trimmed);
       console.info(
-        "🛡️ [Andito RSA] Activando motor autónomo de contingencia local de Red Salud Andina (resolución inmediata 100% en el cliente).",
+        "🛡️ [Andito RSA | Motor Local] Respuesta generada de inmediato por contingencia local (0ms de espera adicional):",
+        {
+          categoria: contingency.unresolved ? "no_resuelto / derivación" : "resuelto_local",
+          resolucion: contingency.reply,
+        }
       );
-      console.log("📋 Respuesta de contingencia generada:\n" + contingency.reply);
       console.groupEnd();
 
       const fallbackBotMessage: ChatMessageItem = {

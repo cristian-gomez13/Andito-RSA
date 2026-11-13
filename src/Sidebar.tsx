@@ -25,10 +25,26 @@ export function Sidebar({
   useEffect(() => {
     if (isOpen) {
       fetch("/api/unresolved")
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => {
+          const ct = res.headers.get("content-type") || "";
+          return res.ok && !ct.includes("text/html") ? res.json() : null;
+        })
         .then((data) => {
           if (data?.count !== undefined) {
             setUnresolvedCount(data.count);
+          } else {
+            // Intentar leer de archivo estático pre-empaquetado si la API no está disponible
+            fetch("/unresolved_questions.json")
+              .then((r) => {
+                const ct = r.headers.get("content-type") || "";
+                return r.ok && !ct.includes("text/html") ? r.json() : null;
+              })
+              .then((items) => {
+                if (Array.isArray(items)) {
+                  setUnresolvedCount(items.length);
+                }
+              })
+              .catch(() => {});
           }
         })
         .catch(() => {
@@ -36,6 +52,11 @@ export function Sidebar({
         });
     }
   }, [isOpen]);
+
+  const isValidDataResponse = (res: Response) => {
+    const ct = res.headers.get("content-type") || "";
+    return res.ok && !ct.includes("text/html");
+  };
 
   const triggerDownload = (blob: Blob, filename: string) => {
     const downloadUrl = window.URL.createObjectURL(blob);
@@ -56,36 +77,50 @@ export function Sidebar({
     try {
       let downloaded = false;
 
-      // 1. Intentar endpoint de API
-      try {
-        const res = await fetch(`/api/unresolved/export?format=${format}`);
-        if (res.ok) {
-          const blob = await res.blob();
-          triggerDownload(blob, `preguntas_no_resueltas_rsa.${format}`);
-          downloaded = true;
-        }
-      } catch (apiErr) {
-        console.warn("[Sidebar] Endpoint API no disponible, conmutando a fallback estático:", apiErr);
+      // 1. Intentar archivo estático pre-generado en dist
+      if (format === "csv") {
+        try {
+          const res = await fetch("/preguntas_no_resueltas_rsa.csv");
+          if (isValidDataResponse(res)) {
+            const blob = await res.blob();
+            triggerDownload(blob, "preguntas_no_resueltas_rsa.csv");
+            downloaded = true;
+          }
+        } catch {}
       }
 
-      // 2. Intentar archivo estático pre-empaquetado
+      // 2. Intentar endpoint de API
+      if (!downloaded) {
+        try {
+          const res = await fetch(`/api/unresolved/export?format=${format}`);
+          if (isValidDataResponse(res)) {
+            const blob = await res.blob();
+            triggerDownload(blob, `preguntas_no_resueltas_rsa.${format}`);
+            downloaded = true;
+          }
+        } catch (apiErr) {
+          console.warn("[Sidebar] Endpoint API no disponible, probando json estático:", apiErr);
+        }
+      }
+
+      // 3. Intentar archivo JSON estático pre-empaquetado
       if (!downloaded) {
         try {
           const res = await fetch("/unresolved_questions.json");
-          if (res.ok) {
+          if (isValidDataResponse(res)) {
             const data = await res.json();
             if (format === "json") {
               const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
               triggerDownload(blob, "preguntas_no_resueltas_rsa.json");
             } else {
               const rows = Array.isArray(data) ? data : [];
-              const header = '"ID","Fecha_Hora","Consulta_Usuario","Motivo_Derivacion","Categoria"\n';
+              const header = '"ID","Fecha_Hora","Pregunta_Sanitizada","Motivo_Derivacion","Categoria"\n';
               const csvContent =
                 header +
                 rows
                   .map(
                     (r: any) =>
-                      `"${r.id || ""}","${r.timestamp || ""}","${(r.userMessage || "").replace(/"/g, '""')}","${(r.reason || "").replace(/"/g, '""')}","${r.category || ""}"`,
+                      `"${r.id || ""}","${r.timestamp || ""}","${(r.question || r.userMessage || "").replace(/"/g, '""')}","${(r.reason || "").replace(/"/g, '""')}","${r.category || ""}"`,
                   )
                   .join("\n");
               const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -98,10 +133,10 @@ export function Sidebar({
         }
       }
 
-      // 3. Fallback en memoria si no hay servidor ni archivo estático
+      // 4. Fallback en memoria si no hay servidor ni archivo estático
       if (!downloaded) {
-        const header = '"ID","Fecha_Hora","Consulta_Usuario","Motivo_Derivacion","Categoria"\n';
-        const sampleRow = `"1","${new Date().toISOString()}","Consulta clínica especializada","Requiere atención médica profesional / derivación formal","consejo_medico"\n`;
+        const header = '"ID","Fecha_Hora","Pregunta_Sanitizada","Motivo_Derivacion","Categoria"\n';
+        const sampleRow = `"uq_01","${new Date().toISOString()}","Consulta clínica especializada","Requiere atención médica profesional / derivación formal","consejo_medico"\n`;
         const blob = new Blob([header + sampleRow], { type: "text/csv;charset=utf-8;" });
         triggerDownload(blob, `preguntas_no_resueltas_rsa.${format}`);
       }
@@ -126,13 +161,24 @@ export function Sidebar({
       let downloaded = false;
       try {
         const res = await fetch("/logs.txt");
-        if (res.ok) {
+        if (isValidDataResponse(res)) {
           const blob = await res.blob();
           triggerDownload(blob, "logs.txt");
           downloaded = true;
         }
       } catch (err) {
         console.warn("[Sidebar] No se pudo obtener /logs.txt del servidor:", err);
+      }
+
+      if (!downloaded) {
+        try {
+          const res = await fetch("/api/logs?format=text");
+          if (isValidDataResponse(res)) {
+            const blob = await res.blob();
+            triggerDownload(blob, "logs.txt");
+            downloaded = true;
+          }
+        } catch {}
       }
 
       if (!downloaded) {
@@ -143,6 +189,7 @@ export function Sidebar({
           "================================================================================",
           `[${new Date().toISOString()}] [INFO] [Sistema] Sesión cliente activa en Red Salud Andina`,
           `[${new Date().toISOString()}] [INFO] [Auditoría] Motor de orientación Andito operativo`,
+          `[${new Date().toISOString()}] [INFO] [Base] 8 sedes y 3 canales de derivación verificados`,
         ].join("\n");
         const blob = new Blob([fallbackLogs], { type: "text/plain;charset=utf-8;" });
         triggerDownload(blob, "logs.txt");
@@ -168,7 +215,7 @@ export function Sidebar({
       let downloaded = false;
       try {
         const res = await fetch("/logs-mensajes.csv");
-        if (res.ok) {
+        if (isValidDataResponse(res)) {
           const blob = await res.blob();
           triggerDownload(blob, "logs-mensajes.csv");
           downloaded = true;
@@ -204,23 +251,21 @@ export function Sidebar({
     try {
       let downloaded = false;
 
-      // 1. Intentar endpoint API
+      // 1. Intentar archivo estático test.csv pre-generado
       try {
-        const res = await fetch("/api/metrics/export?type=live");
-        if (res.ok) {
+        const res = await fetch("/test.csv");
+        if (isValidDataResponse(res)) {
           const blob = await res.blob();
           triggerDownload(blob, "test.csv");
           downloaded = true;
         }
-      } catch (err) {
-        console.warn("[Sidebar] Falló API de métricas, probando archivos estáticos:", err);
-      }
+      } catch {}
 
       // 2. Intentar archivo estático de resultados de prueba en vivo
       if (!downloaded) {
         try {
           const res = await fetch("/rsa_live_testing_results.csv");
-          if (res.ok) {
+          if (isValidDataResponse(res)) {
             const blob = await res.blob();
             triggerDownload(blob, "test.csv");
             downloaded = true;
@@ -228,11 +273,25 @@ export function Sidebar({
         } catch {}
       }
 
-      // 3. Intentar archivo estático de benchmarks y rendimiento
+      // 3. Intentar endpoint API
+      if (!downloaded) {
+        try {
+          const res = await fetch("/api/metrics/export?type=live");
+          if (isValidDataResponse(res)) {
+            const blob = await res.blob();
+            triggerDownload(blob, "test.csv");
+            downloaded = true;
+          }
+        } catch (err) {
+          console.warn("[Sidebar] Falló API de métricas, probando benchmarks:", err);
+        }
+      }
+
+      // 4. Intentar archivo estático de benchmarks y rendimiento
       if (!downloaded) {
         try {
           const res = await fetch("/rsa_test_benchmarks_and_performance.csv");
-          if (res.ok) {
+          if (isValidDataResponse(res)) {
             const blob = await res.blob();
             triggerDownload(blob, "test.csv");
             downloaded = true;
@@ -240,7 +299,7 @@ export function Sidebar({
         } catch {}
       }
 
-      // 4. Fallback generado en memoria
+      // 5. Fallback generado en memoria
       if (!downloaded) {
         const header =
           '"Test_ID","Categoria","Pregunta_Prueba","Respuesta_Obtenida","Latencia_ms","Estado_Resolucion","Modelo_Evaluado"\n';

@@ -84,3 +84,25 @@ for (const asset of dataAssets) {
     // Continuar si algún archivo opcional no está presente
   }
 }
+
+// Copiar alias de test.csv y generar preguntas_no_resueltas_rsa.csv en dist
+try {
+  await copyFile(path.join(process.cwd(), "rsa_live_testing_results.csv"), path.join(outdir, "test.csv"));
+  console.log(" Copied test.csv alias to dist");
+} catch {}
+
+try {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const uqPath = path.join(process.cwd(), "unresolved_questions.json");
+  const uqRaw = readFileSync(uqPath, "utf-8");
+  const uqData = JSON.parse(uqRaw);
+  const header = '"ID","Fecha_Hora","Pregunta_Sanitizada","Motivo_Derivacion","Categoria"\n';
+  const rows = uqData.map(
+    (r: any) =>
+      `"${r.id || ""}","${r.timestamp || ""}","${(r.question || r.userMessage || "").replace(/"/g, '""')}","${(r.reason || "").replace(/"/g, '""')}","${r.category || ""}"`
+  );
+  writeFileSync(path.join(outdir, "preguntas_no_resueltas_rsa.csv"), header + rows.join("\n"), "utf-8");
+  console.log(" Generated dist/preguntas_no_resueltas_rsa.csv");
+} catch (e: any) {
+  console.warn(" Warning generating preguntas_no_resueltas_rsa.csv:", e?.message);
+}

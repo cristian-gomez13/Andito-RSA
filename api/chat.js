@@ -44065,7 +44065,7 @@ async function generateChatResponse(userMessage, history = []) {
         didSwitch = true;
       }
       try {
-        const timeoutMs = Number(process.env.GEMINI_TIMEOUT_MS) || (isVercel ? 2500 : endpoint.baseUrl ? 4000 : 5000);
+        const timeoutMs = Number(process.env.GEMINI_TIMEOUT_MS) || (endpoint.name === "custom-endpoint" ? 1200 : isVercel ? 4500 : 7000);
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT_EXCEEDED")), timeoutMs));
         const callPromise = ai.models.generateContent({
           model: currentModel,
